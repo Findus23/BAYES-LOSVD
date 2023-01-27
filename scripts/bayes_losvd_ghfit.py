@@ -3,7 +3,7 @@ import sys
 import glob
 import h5py
 import pickle
-import pystan
+import stan
 import optparse
 import threading
 import warnings
@@ -13,7 +13,7 @@ import arviz                        as az
 import numpy                        as np
 import matplotlib.pyplot            as plt
 import lib.misc_functions           as misc
-from   lib.create_diagnostic_plots  import create_diagnostic_plots 
+from   lib.create_diagnostic_plots  import create_diagnostic_plots
 from   hashlib                      import md5
 from   multiprocessing              import Queue, Process, cpu_count
 #==============================================================================
@@ -29,35 +29,16 @@ def worker(inQueue, outQueue):
 
         outQueue.put(( status ))
 
-#==============================================================================
-def stan_cache(model_code, model_name=None, codefile=None, **kwargs):
-
-    """Use just as you would `stan`"""
-    code_hash = md5(model_code.encode('ascii')).hexdigest()
-    if model_name is None:
-        cache_fn = 'stan_model/cached-model-{}.pkl'.format(code_hash)
-    else:
-        cache_fn = 'stan_model/cached-{}-{}.pkl'.format(model_name, code_hash)
-    try:
-        sm = pickle.load(open(cache_fn, 'rb'))
-    except:
-        sm = pystan.StanModel(model_code=model_code)
-        with open(cache_fn, 'wb') as f:
-            pickle.dump(sm, f)
-    else:
-        print("Using cached StanModel for "+codefile)
-
-    return sm
 
 #==============================================================================
 def run(i, bin_list, runname, niter, nchain, adapt_delta, max_treedepth, verbose, save_chains, save_plots):
 
     idx    = bin_list[i]
     stridx = str(idx)
-    misc.printRUNNING(runname+" - Bin: "+stridx) 
+    misc.printRUNNING(runname+" - Bin: "+stridx)
 
     try:
-    
+
         # Checking the desired bin exists
         input_file = "../results/"+runname+"/"+runname+"_results.hdf5"
 
@@ -94,7 +75,7 @@ def run(i, bin_list, runname, niter, nchain, adapt_delta, max_treedepth, verbose
         sigma[:,1]  = np.fabs(struct['out/'+stridx+'/losvd'][3,:]-losvd)
         sigma_losvd = np.mean(sigma,axis=1)
 
-        data = {'nvel':        struct['in/nvel'], 
+        data = {'nvel':        struct['in/nvel'],
                 'xvel':        struct['in/xvel'],
                 'losvd_obs':   losvd,
                 'sigma_losvd': sigma_losvd
@@ -105,27 +86,24 @@ def run(i, bin_list, runname, niter, nchain, adapt_delta, max_treedepth, verbose
         struct2 = h5py.File(temp.name,'w')
         struct.copy('in',struct2)
         struct2.create_dataset("out/"+stridx+"/losvd",       data=np.array(struct['out/'+stridx+'/losvd']), compression="gzip")
-    
+
         # Running the model
         with open(codefile, 'r') as myfile:
            code   = myfile.read()
-        model     = stan_cache(model_code=code, codefile=codefile) 
-        fit       = model.sampling(data=data, iter=niter, chains=nchain, 
-                                   control={'adapt_delta':adapt_delta, 'max_treedepth':max_treedepth},
-                                   sample_file=sample_filename, check_hmc_diagnostics=True)
-        samples   = fit.extract(permuted=True)
-        diag_pars = fit.get_sampler_params()
-    
+        model     = stan.build(code,data=data)
+        fit       = model.sample(num_samples=niter, num_chains=nchain)
+        samples   = fit
+
         # If requested, saving sample chains
         if (save_chains == True):
            print("")
-           print("# Saving chains in Arviz (NETCDF) format: "+arviz_filename) 
+           print("# Saving chains in Arviz (NETCDF) format: "+arviz_filename)
            arviz_data = az.from_pystan(posterior=fit)
            az.to_netcdf(arviz_data,arviz_filename)
-  
+
         # Saving Stan's summary of main parameters on disk
         print("")
-        print("# Saving Stan summary: "+summary_filename)         
+        print("# Saving Stan summary: "+summary_filename)
         unwanted  = {'losvd_mod'}
         misc.save_stan_summary(fit, unwanted=unwanted, verbose=verbose,summary_filename=summary_filename)
 
@@ -137,10 +115,10 @@ def run(i, bin_list, runname, niter, nchain, adapt_delta, max_treedepth, verbose
         # Creating diagnostic plots
         if (save_plots == True):
             if os.path.exists(pdf_filename):
-              os.remove(pdf_filename)    
+              os.remove(pdf_filename)
             print("")
-            print("# Saving diagnostic plots: "+pdf_filename) 
-            create_diagnostic_plots(idx, pdf_filename, fit, diag_pars, niter, nchain)
+            # print("# Saving diagnostic plots: "+pdf_filename)
+            # create_diagnostic_plots(idx, pdf_filename, fit, diag_pars, niter, nchain)
 
          # Removing progess files
         print("")
@@ -156,10 +134,10 @@ def run(i, bin_list, runname, niter, nchain, adapt_delta, max_treedepth, verbose
         return 'OK'
 
     except:
-    
+
         misc.printFAILED()
-        traceback.print_exc()            
-          
+        traceback.print_exc()
+
         return 'ERROR'
 
 #==============================================================================
@@ -201,17 +179,17 @@ if (__name__ == '__main__'):
     if (verbose == 0):
         verbose = False
     else:
-        verbose = True    
+        verbose = True
 
     if (save_chains == 0):
         save_chains = False
     else:
-        save_chains = True    
+        save_chains = True
 
     if (save_plots == 0):
         save_plots = False
     else:
-        save_plots = True    
+        save_plots = True
 
     # Checking the file exists
     results_file = "../results/"+runname+"/"+runname+"_results.hdf5"
@@ -223,23 +201,23 @@ if (__name__ == '__main__'):
     f     = h5py.File(results_file,'r')
     nbins = np.array(f['in/nbins'])
     f.close()
-                        
+
      # Defining the list of bins to be analysed
     if (bin == "all"):
        bin_list = list(np.arange(nbins))
        print("# ENTIRE list of bins selected")
     elif (bin == "odd"):
-       bin_list = list(np.arange(0,nbins,2)) 
+       bin_list = list(np.arange(0,nbins,2))
        print("# ODD bins selected")
     elif (bin == "even"):
-       bin_list = list(np.arange(1,nbins,2)) 
+       bin_list = list(np.arange(1,nbins,2))
        print("# EVEN bins selected")
     else:
-       dummy    = bin.split(",") 
+       dummy    = bin.split(",")
        bin_list = list(np.array(dummy,dtype=int))
        nbins    = len(bin_list)
        print("# Selected bins: "+bin)
-    
+
     # Managing the work PARALLEL or SERIAL accordingly
     if njobs*nchain > cpu_count():
         misc.printFAILED("ERROR: The chosen number of NJOBS and NCHAIN seems to be larger than the number of cores in the system!")
@@ -257,7 +235,7 @@ if (__name__ == '__main__'):
 
     # Fill the queue
     for i in range(nbins):
-        inQueue.put( ( i, bin_list, runname, niter, nchain, adapt_delta, 
+        inQueue.put( ( i, bin_list, runname, niter, nchain, adapt_delta,
                        max_treedepth, verbose, save_chains, save_plots) )
 
     # Now running the processes
@@ -274,4 +252,4 @@ if (__name__ == '__main__'):
        print("")
        print("# Packing all results into a single HDF5 file.")
        misc.pack_results(runname, suffix='_gh')
-  
+

@@ -1,7 +1,7 @@
 import sys
 import glob
 import pickle
-import pystan
+import stan
 import warnings
 import lib.misc_functions as     misc
 from   hashlib            import md5
@@ -15,9 +15,10 @@ def stan_cache(model_code, model_name=None, **kwargs):
     else:
         cache_fn = 'stan_model/cached-{}-{}.pkl'.format(model_name, code_hash)
     try:
+        raise Exception("don't use cache")
         sm = pickle.load(open(cache_fn, 'rb'))
     except:
-        sm = pystan.StanModel(model_code=model_code)
+        sm = stan.build(model_code)
         with open(cache_fn, 'wb') as f:
             pickle.dump(sm, f)
     else:
@@ -39,8 +40,8 @@ if (__name__ == '__main__'):
     list = glob.glob("stan_model/*.stan")
 
     for codefile in list:
-       misc.printRUNNING(codefile) 
+       misc.printRUNNING(codefile)
        with open(codefile, 'r') as myfile:
             code = myfile.read()
-       model = stan_cache(model_code=code) 
+       model = stan_cache(model_code=code)
        misc.printDONE(codefile+" compiled.")

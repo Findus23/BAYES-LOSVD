@@ -3,7 +3,7 @@ import sys
 import glob
 import h5py
 import pickle
-import pystan
+import stan
 import optparse
 # import threading
 import warnings
@@ -12,9 +12,11 @@ import arviz                           as az
 import numpy                           as np
 import matplotlib.pyplot               as plt
 import lib.misc_functions              as misc
-from   lib.create_diagnostic_plots     import create_diagnostic_plots 
+from   lib.create_diagnostic_plots     import create_diagnostic_plots
 from   hashlib                         import md5
-from   multiprocessing                 import Queue, Process, cpu_count
+from multiprocessing import Queue, Process, cpu_count, Pool
+
+
 #==============================================================================
 def worker(inQueue, outQueue):
 
@@ -38,9 +40,10 @@ def stan_cache(model_code, model_name=None, codefile=None, **kwargs):
     else:
         cache_fn = 'stan_model/cached-{}-{}.pkl'.format(model_name, code_hash)
     try:
+        raise Exception("don't use cache")
         sm = pickle.load(open(cache_fn, 'rb'))
     except:
-        sm = pystan.StanModel(model_code=model_code)
+        sm = stan.build(model_code)
         with open(cache_fn, 'wb') as f:
             pickle.dump(sm, f)
     else:
@@ -48,18 +51,18 @@ def stan_cache(model_code, model_name=None, codefile=None, **kwargs):
 
     return sm
 #==============================================================================
-def run(i, bin_list, runname, niter, nchain, adapt_delta, max_treedepth, 
+def run(i, bin_list, runname, niter, nchain, adapt_delta, max_treedepth,
         verbose=False, save_chains=False, save_plots=False, fit_type=None):
 
     idx = bin_list[i]
     stridx = str(idx)
-    misc.printRUNNING(runname+" - Bin: "+stridx+" - Fit type: "+fit_type) 
+    misc.printRUNNING(runname+" - Bin: "+stridx+" - Fit type: "+fit_type)
 
     try:
 
         # Defining the version of the code to use
         codefile, extrapars = misc.read_code(fit_type)
-     
+
         # Defining output names and directories
         rootname         = runname+"-"+fit_type
         outdir           = "../results/"+rootname
@@ -71,15 +74,15 @@ def run(i, bin_list, runname, niter, nchain, adapt_delta, max_treedepth,
 
         # Creating the basic structure with the data for Stan
         struct = h5py.File("../preproc_data/"+runname+".hdf5","r")
-        data   = {'npix_obs':      np.array(struct['in/npix_obs']), 
-                  'ntemp':         np.array(struct['in/ntemp']), 
+        data   = {'npix_obs':      np.array(struct['in/npix_obs']),
+                  'ntemp':         np.array(struct['in/ntemp']),
                   'nvel':          np.array(struct['in/nvel']),
                   'npix_temp':     np.array(struct['in/npix_temp']),
-                  'mask':          np.array(struct['in/mask']), 
-                  'nmask':         np.array(struct['in/nmask']), 
+                  'mask':          np.array(struct['in/mask']),
+                  'nmask':         np.array(struct['in/nmask']),
                   'porder':        np.array(struct['in/porder']),
-                  'spec_obs':      np.array(struct['in/spec_obs'][:,idx]), 
-                  'sigma_obs':     np.array(struct['in/sigma_obs'][:,idx]), 
+                  'spec_obs':      np.array(struct['in/spec_obs'][:,idx]),
+                  'sigma_obs':     np.array(struct['in/sigma_obs'][:,idx]),
                   'templates':     np.array(struct['in/templates']),
                   'mean_template': np.array(struct['in/mean_template']),
                   'velscale':      np.array(struct['in/velscale']),
@@ -88,30 +91,27 @@ def run(i, bin_list, runname, niter, nchain, adapt_delta, max_treedepth,
         # Adding any extra parameter needed for that particular fit_type
         for key, val in extrapars.items():
             data[key] = val
-            
+
         # Running the model
         with open(codefile, 'r') as myfile:
            code = myfile.read()
-        model   = stan_cache(model_code=code, codefile=codefile) 
-        fit     = model.sampling(data=data, iter=niter, chains=nchain, 
-                  control={'adapt_delta':adapt_delta, 'max_treedepth':max_treedepth}, 
-                  sample_file=sample_filename, check_hmc_diagnostics=True)
+        model   = stan.build(code,data=data)
+        fit     = model.sample(num_samples=niter, num_chains=nchain)
 
-        samples   = fit.extract(permuted=True) # Extracting parameter samples
-        diag_pars = fit.get_sampler_params()   # Getting sampler diagnostic params
-        
+        samples   = fit # Extracting parameter samples
+        # diag_pars = fit.get_sampler_params()   # Getting sampler diagnostic params
         # If requested, saving sample chains
         if (save_chains == True):
            print("")
-           print("# Saving chains in Arviz (NETCDF) format: "+arviz_filename) 
+           print("# Saving chains in Arviz (NETCDF) format: "+arviz_filename)
            arviz_data = az.from_pystan(posterior=fit, observed_data=['mask','spec_obs','sigma_obs'])
            az.to_netcdf(arviz_data,arviz_filename)
 
         # Saving Stan's summary of main parameters on disk
         print("")
-        print("# Saving Stan summary: "+summary_filename)         
+        print("# Saving Stan summary: "+summary_filename)
         unwanted = {'spec','conv_spec','poly','bestfit','a','losvd_'}
-        misc.save_stan_summary(fit, unwanted=unwanted, verbose=verbose, summary_filename=summary_filename)
+        # misc.save_stan_summary(fit, unwanted=unwanted, verbose=verbose, summary_filename=summary_filename)
 
         # Processing output and saving results
         print("")
@@ -121,11 +121,11 @@ def run(i, bin_list, runname, niter, nchain, adapt_delta, max_treedepth,
         # Creating diagnostic plots
         if (save_plots == True):
             if os.path.exists(pdf_filename):
-              os.remove(pdf_filename)    
+              os.remove(pdf_filename)
             print("")
-            print("# Saving diagnostic plots: "+pdf_filename) 
-            create_diagnostic_plots(idx, pdf_filename, fit, diag_pars, niter, nchain)
-    
+            # print("# Saving diagnostic plots: "+pdf_filename)
+            # create_diagnostic_plots(idx, pdf_filename, fit, diag_pars, niter, nchain)
+
         # Removing progess files
         print("")
         print("# Deleting progress files")
@@ -137,12 +137,12 @@ def run(i, bin_list, runname, niter, nchain, adapt_delta, max_treedepth,
         misc.printDONE(runname+" - Bin: "+stridx+" - Fit type: "+fit_type)
 
         return 'OK'
-    
+
     except Exception:
 
         misc.printFAILED()
-        traceback.print_exc()            
-          
+        traceback.print_exc()
+
         return 'ERROR'
 
 #==============================================================================
@@ -190,22 +190,22 @@ if (__name__ == '__main__'):
     if (verbose == 0):
         verbose = False
     else:
-        verbose = True    
+        verbose = True
 
     if (save_chains == 0):
         save_chains = False
     else:
-        save_chains = True    
+        save_chains = True
 
     if (save_plots == 0):
         save_plots = False
     else:
-        save_plots = True    
+        save_plots = True
 
     if (restart == 0):
         restart = False
     else:
-        restart = True    
+        restart = True
 
     # Checking the file exists
     if not os.path.exists(preproc_file):
@@ -229,7 +229,7 @@ if (__name__ == '__main__'):
     f     = h5py.File(preproc_file,'r')
     nbins = np.array(f['in/nbins'])
     f.close()
-            
+
     # Defining the list of bins to be analysed
     bin_list, nbins = misc.create_bins_list(bin, nbins, mask_bin, outdir, restart)
 
@@ -237,33 +237,28 @@ if (__name__ == '__main__'):
     if njobs*nchain > cpu_count():
         misc.printWARNING("The chosen number of NJOBS and NCHAIN seems to be larger than the number of CPUs in the system!")
 
-    # Create Queues
-    inQueue  = Queue()
-    outQueue = Queue()
+    ### This doesn't work as pystan uses async/paralleisation itself and Pool processes
+    ### are not allowed to span further subprocesses
+    # jobs=[]
+    # # Fill the queue
+    # for i in range(nbins):
+    #     jobs.append( ( i, bin_list, runname, niter, nchain, adapt_delta,
+    #                    max_treedepth, verbose, save_chains, save_plots, fit_type) )
+    # with Pool(njobs) as p:
+    #     run_tmp=p.starmap(run,jobs)
 
-    # Create worker processes
-    ps = [Process(target=worker, args=(inQueue, outQueue)) for _ in range(njobs)]
 
-    # Start worker processes
-    for p in ps: p.start()
-
+    assert njobs == 1
+    run_tmp=[]
     # Fill the queue
     for i in range(nbins):
-        inQueue.put( ( i, bin_list, runname, niter, nchain, adapt_delta, 
-                       max_treedepth, verbose, save_chains, save_plots, fit_type) )
-
-    # Now running the processes
-    run_tmp = [outQueue.get() for _ in range(nbins)]
-
-    # Send stop signal to stop iteration
-    for _ in range(njobs): inQueue.put('STOP')
-
-    # Stop processes
-    for p in ps: p.join()
+        out = run(i, bin_list, runname, niter, nchain, adapt_delta,
+                       max_treedepth, verbose, save_chains, save_plots, fit_type)
+        run_tmp.append(out)
 
     # Pack all results into a single file if everything went OK
     if 'ERROR' not in run_tmp:
        print("")
        print("# Packing all results into a single HDF5 file.")
        misc.pack_results(runname+"-"+fit_type)
-  
+

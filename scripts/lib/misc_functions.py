@@ -63,8 +63,8 @@ def printWARNING(outstr=""):
 
 #==============================================================================
 def create_gh_losvd(pars,velscale):
-    
-    # Defining parameters in pixels 
+
+    # Defining parameters in pixels
     vel   = pars[0]/velscale     # in pixels
     sigma = pars[1]/velscale     # in pixels
     dx    = np.ceil(np.abs(vel)+6.0*sigma) # Sample the Gaussian and GH at least to vel+6*sigma
@@ -79,14 +79,14 @@ def create_gh_losvd(pars,velscale):
     H3   = pars[2]/np.sqrt(3.0)*(w*(2.0*w2-3.0))
     H4   = pars[3]/np.sqrt(24.0)*(w2*(4.0*w2-12.0)+3.0)
     poly = 1.0 + H3 + H4
-    
+
     # Defining the final LOSVD
     losvd = losvd*poly
-    
+
     # Forcing the LOSVD to be positive
     bad = (losvd <= 0.0)
     losvd[bad] = 1E-10
-    
+
     # Normalizing the LOSVD so that the sum=1
     losvd /= np.sum(losvd)
 
@@ -102,14 +102,14 @@ def mirror_vector(maxval, inc=1):
 
 #==============================================================================
 def read_lsf(wave,lsf_file):
-    
+
     # Reading the LSF file
     tab = ascii.read(lsf_file)
-     
+
     # Interpolating LSF at input wavelengths
     f   = interp1d(tab['Lambda'],tab['FWHM'], bounds_error=False, fill_value=np.nan)
     out = f(wave)
-    
+
     return out
 
 #==============================================================================
@@ -117,8 +117,8 @@ def read_code(fit_type):
 
     codes_file = "../config_files/codes.properties"
     config     = toml.load(codes_file)
-    codefile   = "stan_model/"+config[fit_type]['codefile']    
-    
+    codefile   = "stan_model/"+config[fit_type]['codefile']
+
     extrapars = {}
     for key, val in config[fit_type].items():
         if key != 'codefile':
@@ -142,7 +142,7 @@ def pad_spectra(tab):
     templates_padded     = np.pad(tab['templates'],((pad,0),(0,0)), mode="constant", constant_values=0.0)
     mean_template_padded = np.pad(tab['mean_template'],(pad,0),     mode="constant", constant_values=0.0)
     npix_temp = templates_padded.shape[0]
-    
+
     # Adjusting the models wavelength accordingly
     dwav = tab['lwave_temp'][1]-tab['lwave_temp'][0]
     lam0 = tab['lwave_temp'][0]-pad*dwav
@@ -153,7 +153,7 @@ def pad_spectra(tab):
     wave_temp        = wave_temp[0:-2]
 
     return wave_temp, templates_padded, mean_template_padded, npix_temp, pad
-    
+
 #==============================================================================
 def log_unbinning(lamRange, spec, oversample=1, flux=True):
     """
@@ -211,7 +211,7 @@ def save_stan_summary(fit, unwanted=None, summary_filename=None, verbose=None):
        os.remove(summary_filename)
     f = open(summary_filename, 'w')
     f.write(stan_summary)
-    f.close()       
+    f.close()
 
     return
 #==============================================================================
@@ -274,24 +274,24 @@ def process_stan_output_hdp(struct, samples, outhdf5=None, stridx=None):
     for key in samples.keys():
         result = compute_hdp(np.array(samples[key]), lims)
         if not (key == 'lp__'):
-           f.create_dataset("out/"+stridx+"/"+key, data=result, compression="gzip")               
+           f.create_dataset("out/"+stridx+"/"+key, data=result, compression="gzip")
 
     f.close()
 
     return
 #==============================================================================
 def compute_hdp(samples,lims):
-    
+
     ndim = np.ndim(samples)
     if ndim == 1:
        result = np.zeros(5)
     else:
-       size   = samples.shape 
+       size   = samples.shape
        result = np.zeros((5,size[1]))
 
     if ndim == 1:
        for i in range(len(lims)):
-           kk = az.hpd(samples, credible_interval=lims[i])
+           kk = az.hdi(samples, credible_interval=lims[i])
            if i == 0:
                result[2] = np.mean(kk)
            elif i == 1:
@@ -301,9 +301,9 @@ def compute_hdp(samples,lims):
                result[0] = kk[0]
                result[4] = kk[1]
     else:
-       for j in range(size[1]): 
+       for j in range(size[1]):
            for i in range(len(lims)):
-               kk = az.hpd(samples[:,j], credible_interval=lims[i])
+               kk = az.hdi(samples[:,j], credible_interval=lims[i])
                if i == 0:
                    result[2,j] = np.mean(kk)
                elif i == 1:
@@ -317,7 +317,7 @@ def compute_hdp(samples,lims):
 #==============================================================================
 def delete_files(inputfile, extension=None):
 
-    dirname, filename = os.path.split(inputfile) 
+    dirname, filename = os.path.split(inputfile)
     basename = os.path.splitext(filename)[0]
     fileList = glob.glob(dirname+'/'+basename+'*.'+extension)
 
@@ -325,7 +325,7 @@ def delete_files(inputfile, extension=None):
         if os.path.exists(filePath):
            os.remove(filePath)
 
-    return       
+    return
 
 #==============================================================================
 def pack_results(rootname,suffix='', dir='../results/'):
@@ -336,8 +336,8 @@ def pack_results(rootname,suffix='', dir='../results/'):
        print(" - Nothing to pack!")
        print("")
        print(dir+rootname+"/"+rootname+suffix+"_results_bin*.hdf5")
-       return 
-    else:   
+       return
+    else:
        print(" - "+str(nlist)+" files found.")
 
     # Preparing outputfile
@@ -350,10 +350,10 @@ def pack_results(rootname,suffix='', dir='../results/'):
     for infile in input_list:
        f = h5py.File(infile,'r')
 
-       # Copying the input data       
+       # Copying the input data
        if (infile == input_list[0]):
            f.copy("in",g)
-    
+
        # Copying the output results
        members = []
        f.visit(members.append)
@@ -365,33 +365,33 @@ def pack_results(rootname,suffix='', dir='../results/'):
     g.close()
 
     # Checking file is in place and cleaning up
-    if os.path.exists(outfile):    
+    if os.path.exists(outfile):
         for filePath in input_list:
             if os.path.exists(filePath):
                os.remove(filePath)
-         
+
     printDONE(outfile+" written.")
- 
+
     return
 
-#============================================================================== 
+#==============================================================================
 def print_attrs(name,obj):
 
     print(name)
     for key, val in obj.attrs.items():
         print("    %s: %s" % (key, val))
- 
-    return
-  
- #============================================================================== 
-def check_hdf5_tree(filename):
-        
-    f = h5py.File(filename,'r')
-    f.visititems(print_attrs)
- 
+
     return
 
- #============================================================================== 
+ #==============================================================================
+def check_hdf5_tree(filename):
+
+    f = h5py.File(filename,'r')
+    f.visititems(print_attrs)
+
+    return
+
+ #==============================================================================
 def check_configuration(struct):
 
     l = ['filename','instrument','redshift','lmin','lmax','vmax','velscale',
@@ -404,7 +404,7 @@ def check_configuration(struct):
 
     return True
 
- #============================================================================== 
+ #==============================================================================
 def check_codes(fit_type):
 
     codes_file = "../config_files/codes.properties"
@@ -413,7 +413,7 @@ def check_codes(fit_type):
         sys.exit()
 
     config = toml.load(codes_file)
-    
+
     if fit_type not in config.keys():
         printFAILED("Fit type '"+fit_type+"' not found in codes file.")
         print("Available options are:")
@@ -423,10 +423,10 @@ def check_codes(fit_type):
 
     return True
 
- #============================================================================== 
+ #==============================================================================
 def spectralMasking(maskfile, logLam,redshift):
 
-    """ Mask spectral region in the fit. 
+    """ Mask spectral region in the fit.
         Adapted from GIST pipeline
     """
     # Read file
@@ -462,7 +462,7 @@ def spectralMasking(maskfile, logLam,redshift):
 
     return(goodPixels)
 
- #============================================================================== 
+ #==============================================================================
 def create_bins_list(bin, nbins, mask_bin, outdir, restart):
 
     if (bin == "all"):
@@ -470,18 +470,18 @@ def create_bins_list(bin, nbins, mask_bin, outdir, restart):
        print("# ENTIRE list of bins selected")
 
     elif (bin == "odd"):
-       bin_list = list(np.arange(0,nbins,2)) 
+       bin_list = list(np.arange(0,nbins,2))
        print("# ODD bins selected")
 
     elif (bin == "even"):
-       bin_list = list(np.arange(1,nbins,2)) 
+       bin_list = list(np.arange(1,nbins,2))
        print("# EVEN bins selected")
 
     else:
        bin_list = list(np.array(bin.split(","),dtype=int))
        nbins    = len(bin_list)
        print("# Selected bins: "+bin)
-    
+
     # Masking undesired bins
     if mask_bin != "None":
         print("# Masking bins: "+mask_bin)
@@ -498,7 +498,7 @@ def create_bins_list(bin, nbins, mask_bin, outdir, restart):
         bins_on_disk = []
         for file in flist:
             bins_on_disk = np.append(bins_on_disk,file.split("bin")[1].split(".hdf5")[0])
-        
+
         bins_on_disk = np.array(np.sort(bins_on_disk), dtype=int)
         bin_list = np.setdiff1d(bin_list,bins_on_disk, assume_unique=False)
         nbins_on_disk = len(bins_on_disk)
@@ -507,7 +507,7 @@ def create_bins_list(bin, nbins, mask_bin, outdir, restart):
 
     return bin_list, nbins
 
-#============================================================================== 
+#==============================================================================
 def create_xvel_vector(struct):
 
     # Creating the LOSVD velocity vector
@@ -517,11 +517,11 @@ def create_xvel_vector(struct):
     if (xvel[1]-xvel[0] < velscale):
         xvel = xvel[1:-1]
     xvel = np.flip(xvel) # The flipping is necessary because of the way the convolution is done
-    nvel = len(xvel)    
+    nvel = len(xvel)
 
     return xvel, nvel
 
-#============================================================================== 
+#==============================================================================
 def pad_templates(struct, nvel):
 
     # Loading basic info from input structure
@@ -548,7 +548,7 @@ def pad_templates(struct, nvel):
 
     return new_struct
 
-#============================================================================== 
+#==============================================================================
 def spectres(new_wavs, spec_wavs, spec_fluxes, spec_errs=None, fill=None):
 
     """
@@ -690,5 +690,4 @@ def spectres(new_wavs, spec_wavs, spec_fluxes, spec_errs=None, fill=None):
     else:
         return new_fluxes
 
- #============================================================================== 
-       
+ #==============================================================================

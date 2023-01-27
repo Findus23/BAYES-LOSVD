@@ -27,6 +27,9 @@ def stan_cache(model_code, model_name=None, **kwargs):
     return sm
 #==============================================================================
 if (__name__ == '__main__'):
+    print("pystan3 already caches stan models internally")
+    print("so there is no need to do this in the code")
+    exit()
 
     warnings.filterwarnings("ignore")
 
